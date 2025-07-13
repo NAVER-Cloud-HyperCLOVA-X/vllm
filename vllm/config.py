@@ -296,6 +296,9 @@ class ModelConfig:
     - 1k -> 1000\n
     - 1K -> 1024\n
     - 25.6k -> 25,600"""
+    max_num_frames: int = 32  # type: ignore
+    """Allowed number for frames when fetching video from source. If unspecified, will be set to 32
+    """
     spec_target_max_model_len: Optional[int] = None
     """Specify the maximum length for spec decoding draft models."""
     quantization: SkipValidation[Optional[QuantizationMethods]] = None

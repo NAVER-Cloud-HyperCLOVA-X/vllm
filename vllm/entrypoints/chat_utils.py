@@ -7,7 +7,9 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Iterable
 from functools import cached_property, lru_cache, partial
+import numpy as np
 from pathlib import Path
+import sys
 from typing import (Any, Callable, Generic, Literal, Optional, TypeVar, Union,
                     cast)
 
@@ -123,6 +125,23 @@ class CustomChatCompletionContentSimpleImageParam(TypedDict, total=False):
     image_url: Required[str]
 
 
+class CustomChatCompletionContentImageAuxParam(TypedDict, total=False):
+    """A simpler version of the param that only accepts a plain image_url.
+    This is supported by OpenAI API, although it is not documented.
+
+    Example:
+    {
+        "image_aux": {
+            "image": "example_image.jpg",
+            "ocr": "example,ocr,words",
+            "lens_keywords": "example enity",
+            "lens_local_keywords": "[0.07, 0.21, 0.92, 0.90] example entity with quad",
+        }
+    }
+    """
+    image_aux: Required[dict[str, str]]
+
+
 class CustomChatCompletionContentSimpleAudioParam(TypedDict, total=False):
     """A simpler version of the param that only accepts a plain audio_url.
 
@@ -151,6 +170,7 @@ ChatCompletionContentPartParam: TypeAlias = Union[
     ChatCompletionContentPartVideoParam, ChatCompletionContentPartRefusalParam,
     CustomChatCompletionContentPILImageParam,
     CustomChatCompletionContentSimpleImageParam,
+    CustomChatCompletionContentImageAuxParam,
     ChatCompletionContentPartImageEmbedsParam,
     CustomChatCompletionContentSimpleAudioParam,
     CustomChatCompletionContentSimpleVideoParam, str]
@@ -720,8 +740,13 @@ class MultiModalContentParser(BaseMultiModalContentParser):
         return self.parse_audio(audio_url)
 
     def parse_video(self, video_url: str) -> None:
-        video = self._connector.fetch_video(video_url=video_url)
-
+        max_num_frames = -1
+        if hasattr(self._tracker.model_config, "max_num_frames"):
+            max_num_frames = self._tracker.model_config.max_num_frames
+        if not isinstance(max_num_frames, int) or max_num_frames < 0:
+            max_num_frames = sys.maxsize
+            
+        video = self._connector.fetch_video(video_url, num_frames=max_num_frames)
         placeholder = self._tracker.add("video", video)
         self._add_placeholder(placeholder)
 
@@ -783,8 +808,13 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         return self.parse_audio(audio_url)
 
     def parse_video(self, video_url: str) -> None:
-        video = self._connector.fetch_video_async(video_url=video_url)
-
+        max_num_frames = -1
+        if hasattr(self._tracker.model_config, "max_num_frames"):
+            max_num_frames = self._tracker.model_config.max_num_frames
+        if not isinstance(max_num_frames, int) or max_num_frames < 0:
+            max_num_frames = sys.maxsize
+            
+        video = self._connector.fetch_video_async(video_url=video_url, num_frames=max_num_frames)
         placeholder = self._tracker.add("video", video)
         self._add_placeholder(placeholder)
 
@@ -890,6 +920,7 @@ _RefusalParser = partial(cast, ChatCompletionContentPartRefusalParam)
 _PILImageParser = partial(cast, CustomChatCompletionContentPILImageParam)
 # Need to validate url objects
 _ImageParser = TypeAdapter(ChatCompletionContentPartImageParam).validate_python
+_ImageAuxParser = partial(cast, CustomChatCompletionContentImageAuxParam)
 _AudioParser = TypeAdapter(ChatCompletionContentPartAudioParam).validate_python
 _VideoParser = TypeAdapter(ChatCompletionContentPartVideoParam).validate_python
 
@@ -904,6 +935,8 @@ MM_PARSER_MAP: dict[
     lambda part: _TextParser(part).get("text", None),
     "image_url":
     lambda part: _ImageParser(part).get("image_url", {}).get("url", None),
+    "image_aux":
+    lambda part: _ImageAuxParser(part).get("image_aux", None),
     "image_embeds":
     lambda part: _ImageEmbedsParser(part).get("image_embeds", None),
     "image_pil": lambda part: _PILImageParser(part).get("image_pil", None),
@@ -1055,6 +1088,16 @@ def _parse_chat_message_content_part(
         str_content = cast(str, content)
         mm_parser.parse_image(str_content)
         return {'type': 'image'} if wrap_dicts else None
+    if part_type == "image_aux":
+        dict_content = cast(dict, content)
+        mm_parser.parse_image(content["image"])
+        return {
+            'type': 'image', 
+            'filename': content.get('filename', ''),
+            'ocr': content.get('ocr', ''),
+            'lens_keywords': content.get('lens_keywords', ''),
+            'lens_local_keywords': content.get('lens_local_keywords', ''),
+        }
     if part_type == "image_embeds":
         content = cast(Union[str, dict[str, str]], content)
         mm_parser.parse_image_embeds(content)

@@ -306,6 +306,7 @@ class EngineArgs:
     kv_cache_dtype: CacheDType = CacheConfig.cache_dtype
     seed: Optional[int] = ModelConfig.seed
     max_model_len: Optional[int] = ModelConfig.max_model_len
+    max_num_frames: Optional[int] = ModelConfig.max_num_frames
     cuda_graph_sizes: list[int] = get_field(SchedulerConfig,
                                             "cuda_graph_sizes")
     # Note: Specifying a custom executor backend by passing a class
@@ -521,6 +522,8 @@ class EngineArgs:
                                  **model_kwargs["tokenizer_revision"])
         model_group.add_argument("--max-model-len",
                                  **model_kwargs["max_model_len"])
+        model_group.add_argument("--max-num-frames",
+                                 **model_kwargs["max_num_frames"])
         model_group.add_argument("--quantization", "-q",
                                  **model_kwargs["quantization"])
         model_group.add_argument("--enforce-eager",
@@ -971,6 +974,7 @@ class EngineArgs:
             hf_overrides=self.hf_overrides,
             tokenizer_revision=self.tokenizer_revision,
             max_model_len=self.max_model_len,
+            max_num_frames=self.max_num_frames,
             quantization=self.quantization,
             enforce_eager=self.enforce_eager,
             max_seq_len_to_capture=self.max_seq_len_to_capture,
